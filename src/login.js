@@ -28,16 +28,56 @@ async function login(page, { username, password }) {
   await passField.pressSequentially(password, { delay: 50 });
   await setTimeout(500);
 
-  // Click the login button — try multiple selectors
+  // Submit the login form — try every method until one works
   console.log("Submitting login...");
-  const loginButton = page.locator(
-    '#loginSubmit, button:has-text("Log In"), button[type="submit"]'
-  ).first();
-  await loginButton.waitFor({ state: "visible", timeout: 10000 });
-  await loginButton.click();
-  // Also try pressing Enter as a fallback in case the click didn't register
-  await setTimeout(1000);
-  await passField.press("Enter");
+
+  // Debug: log all buttons found on the page
+  const allButtons = await page.evaluate(() => {
+    const btns = document.querySelectorAll("button, input[type=submit]");
+    return Array.from(btns).map((b) => ({
+      tag: b.tagName,
+      id: b.id,
+      type: b.type,
+      text: b.textContent?.trim().substring(0, 40),
+      className: b.className?.substring(0, 60),
+    }));
+  });
+  console.log("Buttons found on page:", JSON.stringify(allButtons, null, 2));
+
+  // Method 1: Force-click with Playwright (bypasses overlay checks)
+  try {
+    const loginBtn = page.locator(
+      '#loginSubmit, button:has-text("Log In"), button[type="submit"]'
+    ).first();
+    await loginBtn.click({ force: true, timeout: 5000 });
+    console.log("  -> Playwright force-click done");
+  } catch (e) {
+    console.log("  -> Playwright force-click failed:", e.message);
+  }
+  await setTimeout(2000);
+
+  // Method 2: Click via raw JavaScript (most reliable)
+  await page.evaluate(() => {
+    const btn =
+      document.querySelector("#loginSubmit") ||
+      document.querySelector('button[type="submit"]') ||
+      Array.from(document.querySelectorAll("button")).find((b) =>
+        b.textContent?.includes("Log In")
+      );
+    if (btn) {
+      btn.click();
+      console.log("JS click on:", btn.id || btn.textContent);
+    }
+  });
+  console.log("  -> JavaScript click done");
+  await setTimeout(2000);
+
+  // Method 3: Submit the form directly
+  await page.evaluate(() => {
+    const form = document.querySelector("form");
+    if (form) form.submit();
+  });
+  console.log("  -> Form submit done");
 
   // Wait for login to complete — Amex may ask for 2FA verification.
   // Poll for up to 3 minutes so the user has time to complete it manually.
