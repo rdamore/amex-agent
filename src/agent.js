@@ -3,22 +3,13 @@ const { login } = require("./login");
 const { enrollOffers } = require("./enroll-offers");
 
 async function runAgent() {
-  const username = process.env.AMEX_USERNAME;
-  const password = process.env.AMEX_PASSWORD;
-  const headless = process.env.HEADLESS !== "false";
-
-  if (!username || !password) {
-    throw new Error("AMEX_USERNAME and AMEX_PASSWORD must be set in .env");
-  }
-
   console.log(`\n========================================`);
   console.log(`Amex Offer Enrollment Agent`);
   console.log(`Started at: ${new Date().toISOString()}`);
-  console.log(`Headless: ${headless}`);
   console.log(`========================================\n`);
 
   const browser = await chromium.launch({
-    headless,
+    headless: false,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
@@ -32,7 +23,7 @@ async function runAgent() {
 
   try {
     // Step 1: Login
-    await login(page, { username, password });
+    await login(page);
 
     // Step 2 & 3: Navigate to offers and enroll
     const result = await enrollOffers(page);
