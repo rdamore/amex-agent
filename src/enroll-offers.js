@@ -1,111 +1,98 @@
 const { setTimeout } = require("timers/promises");
+const { openInSafari, getSafariUrl, runJsInSafari } = require("./safari");
 
 const OFFERS_URL =
   "https://global.americanexpress.com/offers/eligible?intlink=US-AmexOffers-LandingPage";
 
-async function enrollOffers(page) {
+async function enrollOffers() {
   console.log("Navigating to Amex Offers page...");
-  await page.goto(OFFERS_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
+  openInSafari(OFFERS_URL);
+
+  // Wait for the offers page to load
+  await setTimeout(5000);
+
+  // Wait until we're on the offers page
+  for (let i = 0; i < 15; i++) {
+    try {
+      const url = getSafariUrl();
+      if (url.includes("/offers")) break;
+    } catch (e) {}
+    await setTimeout(2000);
+  }
 
   console.log("Waiting for offers to load...");
-  // Wait for the offer cards to appear
-  await page
-    .locator('[data-testid="offer-card"], .offer-card, .offers-list')
-    .first()
-    .waitFor({ state: "visible", timeout: 30000 })
-    .catch(() => {
-      console.log("Could not detect offer cards via test IDs, will try generic selectors.");
-    });
+  await setTimeout(5000);
 
-  // Give the page a moment to finish rendering all offers
-  await setTimeout(3000);
-
-  // Scroll down to load any lazy-loaded offers
-  await autoScroll(page);
+  // Scroll down to load all offers
+  console.log("Scrolling to load all offers...");
+  for (let i = 0; i < 10; i++) {
+    runJsInSafari("window.scrollBy(0, 500)");
+    await setTimeout(500);
+  }
+  // Scroll back to top
+  runJsInSafari("window.scrollTo(0, 0)");
   await setTimeout(2000);
 
-  // Find all "Add" / "+" buttons for unenrolled offers.
-  // Amex uses several possible selectors — try them in priority order.
-  const addButtonSelectors = [
-    'button[title="Add to Card"]',
-    'button:has-text("Add to Card")',
-    'button:has-text("+ Add to Card")',
-    'button[aria-label*="Add to Card"]',
-    '[data-testid="add-offer-button"]',
-    'button:has(svg path[d*="M"])', // generic "+" icon buttons inside offer cards
-  ];
+  // Find and click all "Add to Card" buttons
+  const countResult = runJsInSafari(
+    `document.querySelectorAll('button[title*="Add to Card"], button[aria-label*="Add to Card"]').length`
+  );
+  let totalButtons = parseInt(countResult, 10) || 0;
 
-  let addButtons = [];
-  for (const selector of addButtonSelectors) {
-    addButtons = await page.locator(selector).all();
-    if (addButtons.length > 0) {
-      console.log(`Found ${addButtons.length} offer(s) to enroll using selector: ${selector}`);
-      break;
-    }
+  if (totalButtons === 0) {
+    // Try alternate selectors
+    const altCount = runJsInSafari(
+      `Array.from(document.querySelectorAll('button')).filter(b => b.textContent.includes('Add to Card')).length`
+    );
+    totalButtons = parseInt(altCount, 10) || 0;
   }
 
-  if (addButtons.length === 0) {
-    console.log("No unenrolled offers found. You may already be enrolled in all offers.");
-    return { enrolled: 0, skipped: 0, failed: 0 };
+  if (totalButtons === 0) {
+    console.log("No unenrolled offers found. You may already be enrolled in everything!");
+    return { enrolled: 0, failed: 0 };
   }
+
+  console.log(`Found ${totalButtons} offer(s) to enroll.\n`);
 
   let enrolled = 0;
   let failed = 0;
 
-  for (let i = 0; i < addButtons.length; i++) {
+  for (let i = 0; i < totalButtons; i++) {
     try {
-      const button = addButtons[i];
+      // Always click the first available "Add" button (they disappear after clicking)
+      const clicked = runJsInSafari(`
+        (function() {
+          var btn = document.querySelector('button[title*="Add to Card"], button[aria-label*="Add to Card"]')
+            || Array.from(document.querySelectorAll('button')).find(function(b) { return b.textContent.includes('Add to Card'); });
+          if (btn) {
+            btn.scrollIntoView({block: 'center'});
+            btn.click();
+            return 'clicked';
+          }
+          return 'not_found';
+        })()
+      `);
 
-      // Scroll the button into view
-      await button.scrollIntoViewIfNeeded();
-      await setTimeout(500);
+      if (clicked === "clicked") {
+        enrolled++;
+        console.log(`  [${enrolled}/${totalButtons}] Enrolled in offer.`);
+      } else {
+        console.log(`  No more buttons found at index ${i}.`);
+        break;
+      }
 
-      // Get offer name for logging if possible
-      const card = button.locator("xpath=ancestor::*[contains(@class,'offer')]").first();
-      const offerName = await card.textContent().catch(() => `Offer #${i + 1}`);
-      const label = offerName ? offerName.substring(0, 60).trim() : `Offer #${i + 1}`;
-
-      console.log(`[${i + 1}/${addButtons.length}] Enrolling: ${label}...`);
-      await button.click();
-
-      // Wait briefly for the enrollment to register
-      await setTimeout(1500);
-      enrolled++;
-      console.log(`  -> Enrolled successfully.`);
+      // Wait for the enrollment to register before clicking the next one
+      await setTimeout(2000);
     } catch (err) {
-      console.error(`  -> Failed to enroll offer #${i + 1}: ${err.message}`);
+      console.error(`  Failed on offer #${i + 1}: ${err.message}`);
       failed++;
     }
   }
 
-  const result = { enrolled, skipped: 0, failed };
   console.log(
-    `\nEnrollment complete: ${enrolled} enrolled, ${failed} failed out of ${addButtons.length} offers.`
+    `\nDone! Enrolled: ${enrolled}, Failed: ${failed} out of ${totalButtons} offers.`
   );
-  return result;
-}
-
-async function autoScroll(page) {
-  await page.evaluate(async () => {
-    await new Promise((resolve) => {
-      let totalHeight = 0;
-      const distance = 400;
-      const timer = setInterval(() => {
-        window.scrollBy(0, distance);
-        totalHeight += distance;
-        if (totalHeight >= document.body.scrollHeight) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 200);
-      // Safety timeout
-      window.setTimeout(() => {
-        clearInterval(timer);
-        resolve();
-      }, 15000);
-    });
-  });
+  return { enrolled, failed };
 }
 
 module.exports = { enrollOffers };

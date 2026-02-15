@@ -1,6 +1,8 @@
-const { chromium } = require("playwright");
-const { login } = require("./login");
+const { openInSafari, waitForLogin } = require("./safari");
 const { enrollOffers } = require("./enroll-offers");
+
+const LOGIN_URL =
+  "https://www.americanexpress.com/en-us/account/login?DestPage=https://www.americanexpress.com/en-us/travel/";
 
 async function runAgent() {
   console.log(`\n========================================`);
@@ -8,40 +10,15 @@ async function runAgent() {
   console.log(`Started at: ${new Date().toISOString()}`);
   console.log(`========================================\n`);
 
-  const browser = await chromium.launch({
-    headless: false,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  // Step 1: Open login page in real Safari and wait for user to log in
+  openInSafari(LOGIN_URL);
+  await waitForLogin();
 
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 900 },
-  });
+  // Step 2 & 3: Navigate to offers and enroll
+  const result = await enrollOffers();
 
-  const page = await context.newPage();
-
-  try {
-    // Step 1: Login
-    await login(page);
-
-    // Step 2 & 3: Navigate to offers and enroll
-    const result = await enrollOffers(page);
-
-    console.log(`\nAgent finished at: ${new Date().toISOString()}`);
-    return result;
-  } catch (err) {
-    // Take a screenshot on failure for debugging
-    const screenshotDir = "screenshots";
-    const fs = require("fs");
-    if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir);
-    const screenshotPath = `${screenshotDir}/error-${Date.now()}.png`;
-    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-    console.error(`Screenshot saved to ${screenshotPath}`);
-    throw err;
-  } finally {
-    await browser.close();
-  }
+  console.log(`\nAgent finished at: ${new Date().toISOString()}`);
+  return result;
 }
 
 module.exports = { runAgent };

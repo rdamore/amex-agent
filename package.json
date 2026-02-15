@@ -5,8 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js once",
-    "cron": "node index.js cron",
-    "setup": "npx playwright install chromium"
+    "cron": "node index.js cron"
   },
   "repository": {
     "type": "git",
@@ -17,7 +16,6 @@
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.3.1",
-    "node-cron": "^4.2.1",
-    "playwright": "^1.58.2"
+    "node-cron": "^4.2.1"
   }
 }
