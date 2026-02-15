@@ -23,22 +23,40 @@ async function login(page, { username, password }) {
   const loginButton = page.locator("#loginSubmit");
   await loginButton.click();
 
-  // Wait for navigation after login
+  // Wait for login to complete — Amex may ask for 2FA verification.
+  // Poll for up to 3 minutes so the user has time to complete it manually.
   console.log("Waiting for login to complete...");
-  await page.waitForURL("**/travel/**", { timeout: 60000 }).catch(() => {
-    // Login may redirect elsewhere; just wait for network to settle
-  });
-  await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
+  console.log("If Amex asks for a verification code, enter it in the browser window.");
+  console.log("Waiting up to 3 minutes for you to finish...\n");
 
-  // Verify login succeeded by checking we're no longer on the login page
-  const currentUrl = page.url();
-  if (currentUrl.includes("/account/login")) {
+  const maxWaitMs = 3 * 60 * 1000; // 3 minutes
+  const pollInterval = 3000; // check every 3 seconds
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const currentUrl = page.url();
+
+    // Success: we've left the login page
+    if (
+      !currentUrl.includes("/account/login") &&
+      !currentUrl.includes("/authentication")
+    ) {
+      console.log("Login successful. Current URL:", currentUrl);
+      return;
+    }
+
+    await setTimeout(pollInterval);
+  }
+
+  // Final check after timeout
+  const finalUrl = page.url();
+  if (finalUrl.includes("/account/login") || finalUrl.includes("/authentication")) {
     throw new Error(
-      "Login appears to have failed — still on the login page. Check your credentials."
+      "Login timed out after 3 minutes. Complete the verification faster next time, or check your credentials."
     );
   }
 
-  console.log("Login successful. Current URL:", currentUrl);
+  console.log("Login successful. Current URL:", finalUrl);
 }
 
 module.exports = { login };
