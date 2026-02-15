@@ -1,8 +1,9 @@
-const { execSync } = require("child_process");
+const { execFileSync, execSync } = require("child_process");
 const { setTimeout } = require("timers/promises");
 
-function osascript(script) {
-  return execSync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, {
+// Use execFileSync to avoid shell quoting issues entirely
+function osascript(...args) {
+  return execFileSync("osascript", args, {
     encoding: "utf-8",
     timeout: 15000,
   }).trim();
@@ -13,13 +14,18 @@ function openInSafari(url) {
 }
 
 function getSafariUrl() {
-  return osascript('tell application "Safari" to get URL of current tab of front window');
+  return osascript(
+    "-e",
+    'tell application "Safari" to get URL of current tab of front window'
+  );
 }
 
 function runJsInSafari(js) {
-  // AppleScript's "do JavaScript" bypasses CSP restrictions
-  const escaped = js.replace(/\\/g, "\\\\").replace(/'/g, "'\\''").replace(/"/g, '\\"');
+  // Only need to escape double quotes for the AppleScript string layer.
+  // execFileSync bypasses the shell, so no shell escaping needed.
+  const escaped = js.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   return osascript(
+    "-e",
     `tell application "Safari" to do JavaScript "${escaped}" in current tab of front window`
   );
 }
