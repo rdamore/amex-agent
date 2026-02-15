@@ -13,13 +13,23 @@ async function login(page, { username, password }) {
   const passField = page.locator("#eliloPassword");
 
   await userField.waitFor({ state: "visible", timeout: 30000 });
+  await setTimeout(1000);
 
-  // Fill credentials
+  // Fill credentials by clicking and typing slowly (like a real person)
+  // Using fill() is too fast and Amex's JS doesn't register the values
   console.log("Entering credentials...");
-  await userField.fill(username);
-  await passField.fill(password);
+  await userField.click();
+  await setTimeout(300);
+  await userField.pressSequentially(username, { delay: 50 });
+  await setTimeout(500);
+
+  await passField.click();
+  await setTimeout(300);
+  await passField.pressSequentially(password, { delay: 50 });
+  await setTimeout(500);
 
   // Click the login button
+  console.log("Submitting login...");
   const loginButton = page.locator("#loginSubmit");
   await loginButton.click();
 
