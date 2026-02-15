@@ -1,4 +1,4 @@
-const { chromium } = require("playwright");
+const { webkit } = require("playwright");
 const { login } = require("./login");
 const { enrollOffers } = require("./enroll-offers");
 
@@ -17,9 +17,8 @@ async function runAgent() {
   console.log(`Headless: ${headless}`);
   console.log(`========================================\n`);
 
-  const browser = await chromium.launch({
+  const browser = await webkit.launch({
     headless,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
   const context = await browser.newContext({
