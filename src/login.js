@@ -28,10 +28,16 @@ async function login(page, { username, password }) {
   await passField.pressSequentially(password, { delay: 50 });
   await setTimeout(500);
 
-  // Click the login button
+  // Click the login button — try multiple selectors
   console.log("Submitting login...");
-  const loginButton = page.locator("#loginSubmit");
+  const loginButton = page.locator(
+    '#loginSubmit, button:has-text("Log In"), button[type="submit"]'
+  ).first();
+  await loginButton.waitFor({ state: "visible", timeout: 10000 });
   await loginButton.click();
+  // Also try pressing Enter as a fallback in case the click didn't register
+  await setTimeout(1000);
+  await passField.press("Enter");
 
   // Wait for login to complete — Amex may ask for 2FA verification.
   // Poll for up to 3 minutes so the user has time to complete it manually.
