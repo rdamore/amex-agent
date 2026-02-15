@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js once",
     "cron": "node index.js cron",
-    "setup": "npx playwright install webkit"
+    "setup": "npx playwright install chromium"
   },
   "repository": {
     "type": "git",
