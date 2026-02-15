@@ -20,77 +20,112 @@ async function enrollOffers() {
     await setTimeout(2000);
   }
 
-  console.log("Waiting for offers to load...");
-  await setTimeout(5000);
+  console.log("Waiting for offers to fully load...");
+  await setTimeout(8000);
 
-  // Scroll down to load all offers
-  console.log("Scrolling to load all offers...");
-  for (let i = 0; i < 10; i++) {
-    runJsInSafari("window.scrollBy(0, 500)");
-    await setTimeout(500);
-  }
-  // Scroll back to top
-  runJsInSafari("window.scrollTo(0, 0)");
-  await setTimeout(2000);
-
-  // Find and click all "Add to Card" buttons
-  const countResult = runJsInSafari(
-    `document.querySelectorAll('button[title*="Add to Card"], button[aria-label*="Add to Card"]').length`
-  );
-  let totalButtons = parseInt(countResult, 10) || 0;
-
-  if (totalButtons === 0) {
-    // Try alternate selectors
-    const altCount = runJsInSafari(
-      `Array.from(document.querySelectorAll('button')).filter(b => b.textContent.includes('Add to Card')).length`
+  // First, discover what the "+" add buttons look like
+  console.log("Discovering add buttons on page...");
+  try {
+    const discovery = runJsInSafari(
+      "JSON.stringify(Array.from(document.querySelectorAll('button')).slice(0, 30).map(function(b) { return { text: (b.textContent || '').trim().substring(0, 30), title: b.title, ariaLabel: b.getAttribute('aria-label'), classes: b.className.substring(0, 50) }; }))"
     );
-    totalButtons = parseInt(altCount, 10) || 0;
+    console.log("Sample buttons found:", discovery);
+  } catch (e) {
+    console.log("Discovery failed:", e.message.substring(0, 100));
   }
 
-  if (totalButtons === 0) {
-    console.log("No unenrolled offers found. You may already be enrolled in everything!");
-    return { enrolled: 0, failed: 0 };
-  }
-
-  console.log(`Found ${totalButtons} offer(s) to enroll.\n`);
+  // Scroll to top first
+  runJsInSafari("window.scrollTo(0, 0)");
+  await setTimeout(1000);
 
   let enrolled = 0;
   let failed = 0;
+  let noButtonRounds = 0;
 
-  for (let i = 0; i < totalButtons; i++) {
+  // Scroll through the page slowly, clicking "+" buttons as we find them
+  console.log("\nScrolling through offers and clicking + buttons...\n");
+
+  while (true) {
+    // Try to find and click a "+" button currently visible on screen.
+    // The buttons are blue circles with a "+" icon. Try multiple selectors.
+    let clicked = false;
     try {
-      // Always click the first available "Add" button (they disappear after clicking)
-      const clicked = runJsInSafari(`
-        (function() {
-          var btn = document.querySelector('button[title*="Add to Card"], button[aria-label*="Add to Card"]')
-            || Array.from(document.querySelectorAll('button')).find(function(b) { return b.textContent.includes('Add to Card'); });
-          if (btn) {
-            btn.scrollIntoView({block: 'center'});
-            btn.click();
-            return 'clicked';
+      const result = runJsInSafari(
+        `(function() {
+          var selectors = [
+            'button[aria-label*="Add"]',
+            'button[aria-label*="add"]',
+            'button[title*="Add"]',
+            'button[data-testid*="add"]',
+            'button[data-testid*="Add"]'
+          ];
+          for (var s = 0; s < selectors.length; s++) {
+            var btns = document.querySelectorAll(selectors[s]);
+            for (var i = 0; i < btns.length; i++) {
+              var b = btns[i];
+              var rect = b.getBoundingClientRect();
+              if (rect.top >= 0 && rect.top < window.innerHeight && !b.disabled) {
+                b.scrollIntoView({block: 'center'});
+                b.click();
+                return 'clicked:' + (b.getAttribute('aria-label') || b.title || 'offer');
+              }
+            }
           }
-          return 'not_found';
-        })()
-      `);
+          var allBtns = document.querySelectorAll('button');
+          for (var j = 0; j < allBtns.length; j++) {
+            var btn = allBtns[j];
+            var r = btn.getBoundingClientRect();
+            var svg = btn.querySelector('svg');
+            if (svg && r.top >= 0 && r.top < window.innerHeight && !btn.disabled) {
+              var text = (btn.textContent || '').trim();
+              if (text === '' || text === '+' || text.length < 3) {
+                btn.scrollIntoView({block: 'center'});
+                btn.click();
+                return 'clicked:svg-button';
+              }
+            }
+          }
+          return 'none';
+        })()`
+      );
 
-      if (clicked === "clicked") {
+      if (result.startsWith("clicked")) {
+        clicked = true;
         enrolled++;
-        console.log(`  [${enrolled}/${totalButtons}] Enrolled in offer.`);
-      } else {
-        console.log(`  No more buttons found at index ${i}.`);
+        const label = result.split(":")[1] || "offer";
+        console.log(`  [${enrolled}] Enrolled: ${label}`);
+        noButtonRounds = 0;
+        // Wait for enrollment to register
+        await setTimeout(2500);
+        // Don't scroll yet — there might be more buttons visible
+        continue;
+      }
+    } catch (e) {
+      console.log(`  Error checking for buttons: ${e.message.substring(0, 80)}`);
+      failed++;
+    }
+
+    if (!clicked) {
+      noButtonRounds++;
+
+      // Check if we've reached the bottom of the page
+      const atBottom = runJsInSafari(
+        "(window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 100) ? 'yes' : 'no'"
+      );
+
+      if (atBottom === "yes" && noButtonRounds >= 2) {
+        console.log("\n  Reached the bottom of the page.");
         break;
       }
 
-      // Wait for the enrollment to register before clicking the next one
-      await setTimeout(2000);
-    } catch (err) {
-      console.error(`  Failed on offer #${i + 1}: ${err.message}`);
-      failed++;
+      // Scroll down a bit to reveal more offers
+      runJsInSafari("window.scrollBy(0, 400)");
+      await setTimeout(1500);
     }
   }
 
   console.log(
-    `\nDone! Enrolled: ${enrolled}, Failed: ${failed} out of ${totalButtons} offers.`
+    `\nDone! Enrolled in ${enrolled} offer(s). Failed: ${failed}.`
   );
   return { enrolled, failed };
 }
