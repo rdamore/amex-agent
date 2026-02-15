@@ -16,7 +16,6 @@ async function login(page, { username, password }) {
   await setTimeout(1000);
 
   // Fill credentials by clicking and typing slowly (like a real person)
-  // Using fill() is too fast and Amex's JS doesn't register the values
   console.log("Entering credentials...");
   await userField.click();
   await setTimeout(300);
@@ -26,73 +25,61 @@ async function login(page, { username, password }) {
   await passField.click();
   await setTimeout(300);
   await passField.pressSequentially(password, { delay: 50 });
-  await setTimeout(500);
+  await setTimeout(1000);
 
-  // Submit the login form — try every method until one works
+  // Submit the login — try multiple approaches using only Playwright locators
+  // (Amex blocks page.evaluate so we cannot use JavaScript clicks)
   console.log("Submitting login...");
 
-  // Debug: log all buttons found on the page
-  const allButtons = await page.evaluate(() => {
-    const btns = document.querySelectorAll("button, input[type=submit]");
-    return Array.from(btns).map((b) => ({
-      tag: b.tagName,
-      id: b.id,
-      type: b.type,
-      text: b.textContent?.trim().substring(0, 40),
-      className: b.className?.substring(0, 60),
-    }));
-  });
-  console.log("Buttons found on page:", JSON.stringify(allButtons, null, 2));
+  // Try clicking the Log In button by accessible role
+  const byRole = page.getByRole("button", { name: "Log In" });
+  const byId = page.locator("#loginSubmit");
+  const bySubmit = page.locator('button[type="submit"]');
+  const byText = page.locator("button", { hasText: "Log In" });
 
-  // Method 1: Force-click with Playwright (bypasses overlay checks)
-  try {
-    const loginBtn = page.locator(
-      '#loginSubmit, button:has-text("Log In"), button[type="submit"]'
-    ).first();
-    await loginBtn.click({ force: true, timeout: 5000 });
-    console.log("  -> Playwright force-click done");
-  } catch (e) {
-    console.log("  -> Playwright force-click failed:", e.message);
-  }
-  await setTimeout(2000);
+  const candidates = [
+    { label: "getByRole('button', 'Log In')", locator: byRole },
+    { label: "#loginSubmit", locator: byId },
+    { label: "button[type=submit]", locator: bySubmit },
+    { label: "button hasText 'Log In'", locator: byText },
+  ];
 
-  // Method 2: Click via raw JavaScript (most reliable)
-  await page.evaluate(() => {
-    const btn =
-      document.querySelector("#loginSubmit") ||
-      document.querySelector('button[type="submit"]') ||
-      Array.from(document.querySelectorAll("button")).find((b) =>
-        b.textContent?.includes("Log In")
-      );
-    if (btn) {
-      btn.click();
-      console.log("JS click on:", btn.id || btn.textContent);
+  for (const { label, locator } of candidates) {
+    try {
+      const count = await locator.count();
+      console.log(`  ${label}: found ${count} match(es)`);
+      if (count > 0) {
+        await locator.first().click({ force: true, timeout: 5000 });
+        console.log(`  -> Clicked via ${label}`);
+        break;
+      }
+    } catch (e) {
+      console.log(`  -> ${label} failed: ${e.message.substring(0, 80)}`);
     }
-  });
-  console.log("  -> JavaScript click done");
-  await setTimeout(2000);
+  }
 
-  // Method 3: Submit the form directly
-  await page.evaluate(() => {
-    const form = document.querySelector("form");
-    if (form) form.submit();
-  });
-  console.log("  -> Form submit done");
+  // Also press Enter in the password field as a backup
+  await setTimeout(500);
+  try {
+    await passField.press("Enter");
+    console.log("  -> Pressed Enter in password field");
+  } catch (e) {
+    // passField may no longer be attached if a click already navigated
+  }
 
   // Wait for login to complete — Amex may ask for 2FA verification.
   // Poll for up to 3 minutes so the user has time to complete it manually.
-  console.log("Waiting for login to complete...");
+  console.log("\nWaiting for login to complete...");
   console.log("If Amex asks for a verification code, enter it in the browser window.");
   console.log("Waiting up to 3 minutes for you to finish...\n");
 
-  const maxWaitMs = 3 * 60 * 1000; // 3 minutes
-  const pollInterval = 3000; // check every 3 seconds
+  const maxWaitMs = 3 * 60 * 1000;
+  const pollInterval = 3000;
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
     const currentUrl = page.url();
 
-    // Success: we've left the login page
     if (
       !currentUrl.includes("/account/login") &&
       !currentUrl.includes("/authentication")
@@ -104,7 +91,6 @@ async function login(page, { username, password }) {
     await setTimeout(pollInterval);
   }
 
-  // Final check after timeout
   const finalUrl = page.url();
   if (finalUrl.includes("/account/login") || finalUrl.includes("/authentication")) {
     throw new Error(
